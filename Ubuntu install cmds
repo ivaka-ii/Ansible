@@ -4,4 +4,5 @@ Installing Ansible cmds
 1.sudo apt-add-repository ppa:ansible/ansible
 #if error occurs -> ppd error fix file
 2.sudo apt-get update
-
+3. sudo apt install ansible
+4. sudo apt-get install python -y
