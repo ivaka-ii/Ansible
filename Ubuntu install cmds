@@ -1,0 +1,7 @@
+===========================================
+Installing Ansible cmds
+===========================================
+1.sudo apt-add-repository ppa:ansible/ansible
+#if error occurs -> ppd error fix file
+2.sudo apt-get update
+
