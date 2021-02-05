@@ -1,0 +1,299 @@
+Vagrant info:
+Chapter 13. Vagrant
+
+Vagrant is a great environment for testing Ansible playbooks, which is why I’ve been using it all along in this book, 
+and why I often use Vagrant for testing my own Ansible playbooks. Vagrant isn’t just for testing configuration management scripts;
+ it was originally designed to create repeatable development environments. If you’ve ever joined a new software team and spent a couple 
+ of days discovering what software you had to install on your laptop so you could run a development version of an internal product, you’
+ ve felt the pain that Vagrant was built to alleviate. Ansible playbooks are a great way to specify how to configure a Vagrant machine 
+ so newcomers on your team can get up and running on day one.
+
+Vagrant has some built-in support for Ansible that we haven’t been taking advantage of. 
+This chapter covers Vagrant’s support for using Ansible to configure Vagrant machines.
+Tip
+
+A full treatment of Vagrant is beyond the scope of this book. For more information, check
+ out Vagrant: Up and Running, authored by Mitchell Hashimoto, the creator of Vagrant.
+Convenient Vagrant Configuration Options
+
+Vagrant exposes many configuration options for virtual machines, but there are two that I
+ find particularly useful when using Vagrant for testing: setting a specific IP address and enabling agent forwarding.
+Port Forwarding and Private IP Addresses
+
+When you create a new Vagrantfile by using the vagrant init command, the default networking
+ configuration allows you to reach the Vagrant box only via an SSH port that is forwarded from localhost.
+ For the first Vagrant machine that you start, that’s port 2222, and each subsequent Vagrant machine 
+ that you bring up will forward a different port. As a consequence, the only way to access your 
+ Vagrant machine in the default configuration is to SSH to localhost on port 2222. Vagrant 
+ forwards this to port 22 on the Vagrant machine.
+
+This default configuration isn’t very useful for testing web-based applications, since 
+the web application will be listening on a port that we can’t access.
+
+There are two ways around this. One way is to tell Vagrant to set up another forwarded port.
+ For example, if your web application listens on port 80 inside your Vagrant machine, you 
+ can configure Vagrant to forward port 8000 on your local machine to port 80 on the Vagrant 
+ machine. Example 13-1 shows how to configure port forwarding by editing the Vagrantfile.
+Example 13-1. Forwarding local port 8000 to Vagrant machine port 80
+
+# Vagrantfile
+VAGRANTFILE_API_VERSION = "2"
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  # Other config options not shown
+
+  config.vm.network :forwarded_port, host: 8000, guest: 80
+end
+
+Port forwarding works, but I find it more useful to assign the Vagrant 
+machine its own IP address. That way, interacting with it is more like interacting 
+with a real remote server: I can connect directly to port 80 on the machine’s IP 
+rather than connecting to port 8000 on localhost.
+
+A simpler approach is to assign the machine a private IP. Example 13-2 shows how to 
+assign the IP address 192.168.33.10 to the machine by editing the Vagrantfile.
+Example 13-2. Assign a private IP to a Vagrant machine
+
+# Vagrantfile
+VAGRANTFILE_API_VERSION = "2"
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  # Other config options not shown
+
+  config.vm.network "private_network", ip: "192.168.33.10"
+
+end
+
+If we run a web server on port 80 of our Vagrant machine, we can access it at http://192.168.33.10.
+
+This configuration uses a Vagrant private network. The machine will be accessible only 
+from the machine that runs Vagrant. You won’t be able to connect to this IP address from 
+another physical machine, even if it’s on the same network as the machine running Vagrant. 
+However, different Vagrant machines can connect to each other.
+
+Check out the Vagrant documentation for more details on the different networking configuration options.
+Enabling Agent Forwarding
+
+If you are checking out a remote Git repository over SSH, and you need to use agent forwarding,
+ then you must configure your Vagrant machine so that Vagrant enables agent forwarding when 
+ it connects to the agent via SSH. See Example 13-3 for how to enable this. For more on agent 
+ forwarding, see Appendix A.
+Example 13-3. Enabling agent forwarding
+
+# Vagrantfile
+VAGRANTFILE_API_VERSION = "2"
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  # Other config options not shown
+
+  config.ssh.forward_agent = true
+
+end
+
+The Ansible Provisioner
+
+Vagrant has a notion of provisioners. A provisioner is an external tool 
+that Vagrant uses to configure a virtual machine after it has started up.
+ In addition to Ansible, Vagrant can also provision with shell scripts, Chef, 
+ Puppet, Salt, CFEngine, and even Docker.
+
+Example 13-4 shows a Vagrantfile that has been configured to use Ansible as 
+a provisioner, specifically using the playbook.yml playbook.
+Example 13-4. Vagrantfile
+
+VAGRANTFILE_API_VERSION = "2"
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  config.vm.box = "ubuntu/trusty64"
+
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook = "playbook.yml"
+  end
+end
+
+When the Provisioner Runs
+
+The first time you run vagrant up, Vagrant will execute the provisioner and 
+will record that the provisioner was run. If you halt the virtual machine and then 
+start it up, Vagrant remembers that it has already run the provisioner and will not run it a second time.
+
+You can force Vagrant to run the provisioner against a running virtual machine as follows:
+
+$ vagrant provision
+
+You can reboot a virtual machine and run the provisioner after reboot:
+
+$ vagrant reload --provision
+
+Similarly, you can start up a halted virtual machine and have Vagrant run the provisioner:
+
+$ vagrant up --provision
+
+Inventory Generated by Vagrant
+
+When Vagrant runs, it generates an Ansible inventory file named .vagrant/provisioners/ansible/inventory/vagrant_ansible_inventory. 
+Example 13-5 shows what this file looks like for our example.
+Example 13-5. vagrant_ansible_inventory
+
+# Generated by Vagrant
+
+default ansible_host=127.0.0.1 ansible_port=2202
+
+Note that it uses default as the inventory hostname. When writing playbooks for the Vagrant 
+provisioner, specify hosts: default or hosts: all.
+
+More interesting is the case where you have a multimachine Vagrant environment, where the 
+Vagrantfile specifies multiple virtual machines. For example, see Example 13-6.
+Example 13-6. Vagrantfile (multimachine)
+
+VAGRANTFILE_API_VERSION = "2"
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  config.vm.define "vagrant1" do |vagrant1|
+    vagrant1.vm.box = "ubuntu/trusty64"
+    vagrant1.vm.provision "ansible" do |ansible|
+      ansible.playbook = "playbook.yml"
+    end
+  end
+  config.vm.define "vagrant2" do |vagrant2|
+    vagrant2.vm.box = "ubuntu/trusty64"
+    vagrant2.vm.provision "ansible" do |ansible|
+      ansible.playbook = "playbook.yml"
+    end
+  end
+  config.vm.define "vagrant3" do |vagrant3|
+    vagrant3.vm.box = "ubuntu/trusty64"
+    vagrant3.vm.provision "ansible" do |ansible|
+      ansible.playbook = "playbook.yml"
+    end
+  end
+end
+
+The generated inventory file will look like Example 13-7. Note that the Ansible aliases (vagrant1, vagrant2, vagrant3) match the names assigned to the machines in the Vagrantfile.
+Example 13-7. vagrant_ansible_inventory (multimachine)
+
+# Generated by Vagrant
+
+vagrant1 ansible_host=127.0.0.1 ansible_port=2222
+vagrant2 ansible_host=127.0.0.1 ansible_port=2200
+vagrant3 ansible_host=127.0.0.1 ansible_port=2201
+
+Provisioning in Parallel
+
+In Example 13-6, Vagrant is shown running ansible-playbook once for each virtual machine, 
+and it uses the --limit flag so that the provisioner runs against only a single virtual machine at a time.
+
+Alas, running Ansible this way doesn’t take advantage of Ansible’s capability to execute 
+tasks in parallel across the hosts. We can work around this by configuring our Vagrantfile
+ to run the provisioner only when the last virtual machine is brought up, and to tell Vagrant
+ not to pass the --limit flag to Ansible. See Example 13-8 for the modified playbook.
+Example 13-8. Vagrantfile (multimachine with parallel provisioning)
+
+VAGRANTFILE_API_VERSION = "2"
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  # Use the same key for each machine
+  config.ssh.insert_key = false
+
+  config.vm.define "vagrant1" do |vagrant1|
+    vagrant1.vm.box = "ubuntu/trusty64"
+  end
+  config.vm.define "vagrant2" do |vagrant2|
+    vagrant2.vm.box = "ubuntu/trusty64"
+  end
+  config.vm.define "vagrant3" do |vagrant3|
+    vagrant3.vm.box = "ubuntu/trusty64"
+    vagrant3.vm.provision "ansible" do |ansible|
+      ansible.limit = 'all'
+      ansible.playbook = "playbook.yml"
+    end
+  end
+end
+
+Now, when you run vagrant up the first time, it will run the Ansible provisioner only after 
+all three virtual machines have started up.
+
+From Vagrant’s perspective, only the last virtual machine, vagrant3, has a provisioner, 
+so using vagrant provision vagrant1 or vagrant provision vagrant2 will have no effect.
+
+As we discussed in “Preliminaries: Multiple Vagrant Machines”, Vagrant 1.7+ defaults to 
+using a different SSH key for each host. If we want to provision in parallel, we need to 
+configure the Vagrant machines so that they all use the same SSH key, which is why Example 13-8 includes this line:
+
+config.ssh.insert_key = false
+
+Specifying Groups
+
+It can be useful to assign groups to Vagrant virtual machines, especially if you are reusing
+ playbooks that reference existing groups. Example 13-9 shows how to assign vagrant1 to the 
+ web group, vagrant2 to the task group, and vagrant3 to the redis group.
+Example 13-9. Vagrantfile (multimachine with groups)
+
+VAGRANTFILE_API_VERSION = "2"
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  # Use the same key for each machine
+  config.ssh.insert_key = false
+
+  config.vm.define "vagrant1" do |vagrant1|
+    vagrant1.vm.box = "ubuntu/trusty64"
+  end
+  config.vm.define "vagrant2" do |vagrant2|
+    vagrant2.vm.box = "ubuntu/trusty64"
+  end
+  config.vm.define "vagrant3" do |vagrant3|
+    vagrant3.vm.box = "ubuntu/trusty64"
+    vagrant3.vm.provision "ansible" do |ansible|
+      ansible.limit = 'all'
+      ansible.playbook = "playbook.yml"
+      ansible.groups = {
+        "web"  =>  ["vagrant1"],
+        "task" =>  ["vagrant2"],
+        "redis" => ["vagrant3"]
+      }
+    end
+  end
+end
+
+Example 13-10 shows the resulting inventory file generated by Vagrant.
+Example 13-10. vagrant_ansible_inventory (multimachine, with groups)
+
+# Generated by Vagrant
+
+vagrant1 ansible_host=127.0.0.1 ansible_port=2222
+vagrant2 ansible_host=127.0.0.1 ansible_port=2200
+vagrant3 ansible_host=127.0.0.1 ansible_port=2201
+
+[web]
+vagrant1
+
+[task]
+vagrant2
+
+[redis]
+vagrant3
+
+Ansible Local Provisioner
+
+Starting from version 1.8, Vagrant can also be configured to run Ansible from the 
+guest instead of the host. This mode is useful if you don’t want to install Ansible 
+on the host machine. If Ansible is not installed on the guest, Vagrant will attempt 
+to install using pip, although this behavior is configurable.
+
+Vagrant looks in the guest’s /vagrant directory for playbooks. The default behavior 
+of Vagrant is to mount the directory on the host that contains the Vagrantfile to /vagrant, 
+so Vagrant effectively looks in the same place as when you use the ordinary Ansible provisioner.
+
+To use the Ansible local provisioner, specify ansible_local as the provisioner, as shown in Example 13-11.
+Example 13-11. Vagrantfile (Ansible local provisioner)
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/trusty64"
+  config.vm.provision "ansible_local" do |ansible|
+      ansible.playbook = "playbook.yml"
+  end
+end
+
+This chapter was a quick—but I hope useful—overview on how to get the most out of combining 
+Vagrant and Ansible. Vagrant’s Ansible provisioner supports many other options to Ansible 
+that aren’t covered in this chapter. For more details, see the official Vagrant documentation on the Ansible provisioner.
